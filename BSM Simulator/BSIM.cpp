@@ -69,9 +69,8 @@ int main(void)
 	for(int i=0; i <No_of_BSM; i++)
 	{
 		int BSM_Id;
-		//srand(time(NULL));
 		srand(No_of_BSM + i);
-		BSM_Id = (rand() % 10) + 1;// + rand() % 10 * (rand() % 10);
+		BSM_Id = (rand() % 10) + 1;
 		BSM_Id_List[i] = BSM_Id;
 	}
 	cout<<"BSM Id's generated in this cycle:"<<endl;
@@ -81,15 +80,15 @@ int main(void)
 	}
 	
 	std::set<int> BSM_Set(BSM_Id_List,(BSM_Id_List + No_of_BSM));
-	cout<<"Unique BSM Id's generated:"<<BSM_Set.size()<<endl;
 	std::set<int>::iterator it;
 	
+	cout<<"Unique BSM Id's generated:"<<endl;
 	for(it = BSM_Set.begin(); it != BSM_Set.end(); it++)
 	{
 		cout<<*it<<endl;
 	}
 	
-	int counter = 1,r,size;
+	int counter = 1,size;
 	
     while(counter <= history)
     {
@@ -133,11 +132,11 @@ int main(void)
 			cout<<"\tTimeStamp: "<<bsm.TimeStamp<<endl;
 			
 			cout<<endl<<endl;
-			Sleep(100);
+			
 			
 		}
 		
-		Sleep(1000);
+		Sleep(100);
 	
     }
 
