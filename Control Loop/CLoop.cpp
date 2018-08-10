@@ -4,10 +4,20 @@
 #include <vector>
 #include <string>
 #include <cstdio>
+#include <chrono>
 #include<winsock2.h>
 using namespace std;
 
 #define PORT 8888   //The port on which to listen for incoming data
+
+DWORD WINAPI controlloop( LPVOID lpParam );
+
+typedef struct MyData {
+    int val1;
+    int val2;
+} MYDATA, *PMYDATA; //Sample data structure used for initializing thread's heap , currently not in use.
+
+
 
 struct BSM{
 bool Dirty_flag; 
@@ -24,6 +34,8 @@ double Average_speed;
 double TimeStamp; 
 };
 
+std::vector<struct BSM> myvec;
+
 int main()
 {
 	BSM bsm = {0};
@@ -32,11 +44,8 @@ int main()
     int slen , recv_len;
     int stlen = sizeof(bsm);
     WSADATA wsa;
-	std::vector<struct BSM> myvec;
-	std::vector<struct BSM>::iterator itv;
-	std::map<int,vector<struct BSM>> mymap;
-	std::map<int,vector<struct BSM>>::iterator itm; 
-    
+	
+	std::vector<struct BSM> tempvec;    
     slen = sizeof(si_other) ;
 
     cout<<"\nInitialising Winsock...";
@@ -67,15 +76,56 @@ int main()
     }
 
     cout<<"Bind done"<<endl;
+	
+	
+	PMYDATA pDataArray;
+	// Allocate memory for thread data.
+	pDataArray = (PMYDATA) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,sizeof(MYDATA));
 
+	if( pDataArray == NULL )
+    {
+        // If the array allocation fails, the system is out of memory
+        // so there is no point in trying to print an error message.
+        // Just terminate execution.
+        ExitProcess(2);
+    }
+
+	HANDLE  hThreadArray; 
+	DWORD   dwThreadIdArray;
+
+	hThreadArray = CreateThread( 
+            NULL,                   // default security attributes
+            0,                      // use default stack size  
+            controlloop,	// thread function name
+            pDataArray,          // argument to thread function 
+			0,                      // use default creation flags 
+            &dwThreadIdArray);   // returns the thread identifier 
+		
+	if (hThreadArray == NULL) 
+    {
+        ExitProcess(3);
+    }
+
+	
+		
     int counter = 0;
-	while(counter < 20)
+	bool start = true;
+	long bt,et;
+	while(1)
     {
         cout<<"Waiting for data...";
-
-        fflush(stdout);
+		
+		auto now = std::chrono::system_clock::now();
+		if(start == true)
+		{
+			bt = std::chrono::system_clock::to_time_t( now );
+			//cout<<"bt:"<<bt<<endl;
+			start = false;
+		}
+        
+		fflush(stdout);
         //clear the buffer by filling null, it might have previously received data
-                
+		                
         if ((recv_len = recvfrom(s, (char*)&bsm, stlen, 0, (struct sockaddr *) &si_other, &slen)) == SOCKET_ERROR)
         {
             cout<<"recvfrom() failed with error code : "<< WSAGetLastError();
@@ -102,12 +152,50 @@ int main()
 
 		cout<<endl<<endl;
 			
-		myvec.push_back(bsm); 
-		
 		counter++;
-	}
 		
+		tempvec.push_back(bsm); 
+		
+		
+		et = std::chrono::system_clock::to_time_t( now );
+		//cout<<"et:"<<et<<endl;
+		if((et - bt) >= 1)
+		{
+			//cout<<"tick"<<endl;
+			start = true;
+			counter = 0;
+			myvec = tempvec;
+			tempvec.clear();
+		}
+			
+		
+	}
+
+	closesocket(s);
+    WSACleanup();
+	
+		// Wait until thread is terminated.
+	WaitForSingleObject(hThreadArray, 20 * 1000);
+
+	// Close thread handles and free memory allocations.
+
+	CloseHandle(hThreadArray);
+    if(pDataArray != NULL)
+    {
+        HeapFree(GetProcessHeap(), 0, pDataArray);
+        pDataArray = NULL;    // Ensure address is not reused.
+    }
+	
+}
+
+DWORD WINAPI controlloop( LPVOID lpParam )
+{
+	cout<<__FUNCTION__<<endl;
+	
+			
 		std::list<int> mylist;
+		
+		std::vector<struct BSM>::iterator itv;
 	
 		for(itv = myvec.begin(); itv != myvec.end(); itv++)
 		{
@@ -143,6 +231,9 @@ int main()
 		*/	
 		}	
 	
+		std::map<int,vector<struct BSM>> mymap;
+		std::map<int,vector<struct BSM>>::iterator itm; 
+		
 		for(it = mylist.begin(); it != mylist.end(); it++)
 		{
 			//cout<<*it<<endl;
@@ -164,10 +255,9 @@ int main()
 			}
 		}
 
-    closesocket(s);
-    WSACleanup();
+
 	
-	cout<<"****************************************************************************************************"<<endl;
+	cout<<"****************************Current Frame Data*****************************************************"<<endl;
 	
 	for(itm = mymap.begin(); itm != mymap.end(); itm++) //To print the data
 	{
@@ -194,5 +284,8 @@ int main()
 		}
 	}
 	
+	myvec.clear();
+	//Sleep(15000);
+	return 0;
 }
 
