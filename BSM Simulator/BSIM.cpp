@@ -132,12 +132,8 @@ int main(void)
 			cout<<"\tTimeStamp: "<<bsm.TimeStamp<<endl;
 			
 			cout<<endl<<endl;
-			
-			
 		}
-		
 		Sleep(100);
-	
     }
 
     closesocket(s);
