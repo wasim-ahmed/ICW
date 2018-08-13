@@ -133,7 +133,8 @@ int main(void)
 			
 			cout<<endl<<endl;
 		}
-		Sleep(100);
+		
+		Sleep(5);
     }
 
     closesocket(s);
