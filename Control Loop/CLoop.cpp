@@ -108,21 +108,13 @@ int main()
 
 	
 		
-    int counter = 0;
+    int counter = 1;
 	bool start = true;
 	long bt,et;
 	while(1)
     {
         cout<<"Waiting for data...";
 		
-		auto now = std::chrono::system_clock::now();
-		if(start == true)
-		{
-			bt = std::chrono::system_clock::to_time_t( now );
-			//cout<<"bt:"<<bt<<endl;
-			start = false;
-		}
-        
 		fflush(stdout);
         //clear the buffer by filling null, it might have previously received data
 		                
@@ -131,6 +123,14 @@ int main()
             cout<<"recvfrom() failed with error code : "<< WSAGetLastError();
             exit(EXIT_FAILURE);
         }
+		
+		auto now = std::chrono::system_clock::now();
+		if(start == true)
+		{
+			bt = std::chrono::system_clock::to_time_t( now );
+			//cout<<"bt:"<<bt<<endl;
+			start = false;
+		}
 		
 		cout<<"Data received: "<<counter<<endl;
 		cout<<"number of bytes received: "<<recv_len<<endl;
@@ -152,7 +152,7 @@ int main()
 
 		cout<<endl<<endl;
 			
-		counter++;
+		//counter++;
 		
 		tempvec.push_back(bsm); 
 		
@@ -163,11 +163,11 @@ int main()
 		{
 			//cout<<"tick"<<endl;
 			start = true;
-			counter = 0;
+			//counter = 0;
+			counter++;
 			myvec = tempvec;
 			tempvec.clear();
 		}
-			
 		
 	}
 
@@ -192,7 +192,8 @@ DWORD WINAPI controlloop( LPVOID lpParam )
 {
 	cout<<__FUNCTION__<<endl;
 	
-			
+	while(1)
+	{	
 		std::list<int> mylist;
 		
 		std::vector<struct BSM>::iterator itv;
@@ -285,7 +286,10 @@ DWORD WINAPI controlloop( LPVOID lpParam )
 	}
 	
 	myvec.clear();
+	mylist.clear();
+	mymap.clear();
 	//Sleep(15000);
+	}
 	return 0;
 }
 
