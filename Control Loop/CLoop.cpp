@@ -6,18 +6,12 @@
 #include <cstdio>
 #include <chrono>
 #include<winsock2.h>
+#include <csignal>
 using namespace std;
 
 #define PORT 8888   //The port on which to listen for incoming data
 
-DWORD WINAPI controlloop( LPVOID lpParam );
-
-typedef struct MyData {
-    int val1;
-    int val2;
-} MYDATA, *PMYDATA; //Sample data structure used for initializing thread's heap , currently not in use.
-
-
+void controlloop( int param);
 
 struct BSM{
 bool Dirty_flag; 
@@ -44,6 +38,7 @@ int main()
     int slen , recv_len;
     int stlen = sizeof(bsm);
     WSADATA wsa;
+	void (*prev_handler)(int);
 	
 	std::vector<struct BSM> tempvec;    
     slen = sizeof(si_other) ;
@@ -78,42 +73,14 @@ int main()
     cout<<"Bind done"<<endl;
 	
 	
-	PMYDATA pDataArray;
-	// Allocate memory for thread data.
-	pDataArray = (PMYDATA) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,sizeof(MYDATA));
-
-	if( pDataArray == NULL )
-    {
-        // If the array allocation fails, the system is out of memory
-        // so there is no point in trying to print an error message.
-        // Just terminate execution.
-        ExitProcess(2);
-    }
-
-	HANDLE  hThreadArray; 
-	DWORD   dwThreadIdArray;
-
-	hThreadArray = CreateThread( 
-            NULL,                   // default security attributes
-            0,                      // use default stack size  
-            controlloop,	// thread function name
-            pDataArray,          // argument to thread function 
-			0,                      // use default creation flags 
-            &dwThreadIdArray);   // returns the thread identifier 
-		
-	if (hThreadArray == NULL) 
-    {
-        ExitProcess(3);
-    }
-
-	
-		
     int counter = 1;
 	bool start = true;
 	long bt,et;
 	while(1)
     {
-        cout<<"Waiting for data...";
+        //cout<<"Waiting for data...";
+		cout<<"..."<<"\t";
+		prev_handler = signal (SIGINT, controlloop);
 		
 		fflush(stdout);
         //clear the buffer by filling null, it might have previously received data
@@ -132,12 +99,12 @@ int main()
 			start = false;
 		}
 		
-		cout<<"Data received: "<<counter<<endl;
-		cout<<"number of bytes received: "<<recv_len<<endl;
+		//cout<<"Data received: "<<counter<<endl;
+		//cout<<"number of bytes received: "<<recv_len<<endl;
 
-        cout<<"Received packet from"<<inet_ntoa(si_other.sin_addr)<<":"<<ntohs(si_other.sin_port)<<endl;
+       // cout<<"Received packet from"<<inet_ntoa(si_other.sin_addr)<<":"<<ntohs(si_other.sin_port)<<endl;
         
-		cout<<"\tBSM Id: "<<bsm.BSM_Id<<endl;
+	/*	cout<<"\tBSM Id: "<<bsm.BSM_Id<<endl;
 		cout<<"\tGPS Fix: "<<bsm.GPS_Fix<<endl; 
 		cout<<"\tLatitude: "<<bsm.Latitude<<endl; 
 		cout<<"\tLongitude: "<<bsm.Longitude<<endl; 
@@ -151,49 +118,37 @@ int main()
 		cout<<"\tTimeStamp: "<<bsm.TimeStamp<<endl; 		
 
 		cout<<endl<<endl;
-			
+	*/		
 		//counter++;
 		
 		tempvec.push_back(bsm); 
-		
 		
 		et = std::chrono::system_clock::to_time_t( now );
 		//cout<<"et:"<<et<<endl;
 		if((et - bt) >= 1)
 		{
 			//cout<<"tick"<<endl;
+			raise(SIGINT);
 			start = true;
-			//counter = 0;
-			counter++;
+			cout<<"total Packets received in this frame:"<<counter<<endl;
+			counter = 0;
 			myvec = tempvec;
 			tempvec.clear();
 		}
-		
+		counter++;
 	}
 
 	closesocket(s);
     WSACleanup();
 	
-		// Wait until thread is terminated.
-	WaitForSingleObject(hThreadArray, 20 * 1000);
-
-	// Close thread handles and free memory allocations.
-
-	CloseHandle(hThreadArray);
-    if(pDataArray != NULL)
-    {
-        HeapFree(GetProcessHeap(), 0, pDataArray);
-        pDataArray = NULL;    // Ensure address is not reused.
-    }
-	
 }
 
-DWORD WINAPI controlloop( LPVOID lpParam )
+void controlloop( int param)
 {
-	cout<<__FUNCTION__<<endl;
+		cout<<endl;
+		cout<<__FUNCTION__<<endl;
 	
-	while(1)
-	{	
+		
 		std::list<int> mylist;
 		
 		std::vector<struct BSM>::iterator itv;
@@ -289,7 +244,7 @@ DWORD WINAPI controlloop( LPVOID lpParam )
 	mylist.clear();
 	mymap.clear();
 	//Sleep(15000);
-	}
-	return 0;
+
+	//return 0;
 }
 
