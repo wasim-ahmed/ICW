@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <set>
+#include <conio.h>
 
 using namespace std;
 
@@ -57,7 +58,10 @@ int main(void)
     si_other.sin_port = htons(PORT);
     si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
 
-	
+	//here
+	while(1)
+	{
+	getch();
 	int No_of_BSM;
 	srand(time(NULL));
 	
@@ -134,9 +138,12 @@ int main(void)
 			cout<<endl<<endl;
 		}
 		
-		Sleep(5);
+		Sleep(10);
     }
-
+	BSM_Id_List[No_of_BSM] = {0};
+	BSM_Set.clear();
+	//Sleep(2000);
+	}
     closesocket(s);
     WSACleanup();
 
