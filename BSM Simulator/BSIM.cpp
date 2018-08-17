@@ -5,6 +5,8 @@
 #include <ctime>
 #include <set>
 #include <conio.h>
+#include <chrono>
+#include <ratio>
 
 using namespace std;
 
@@ -25,12 +27,11 @@ double Long_Error;
 double Altitude_Error; 
 double Speed; 
 double Average_speed; 
-double TimeStamp; 
+long TimeStamp; 
 };
 
 int main(void)
 {
-
 	BSM bsm;
 	
 	struct sockaddr_in si_other;
@@ -58,14 +59,13 @@ int main(void)
     si_other.sin_port = htons(PORT);
     si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
 
-	//here
-	while(1)
-	{
-	getch();
+	//while(1)
+	
+	//getch();
 	int No_of_BSM;
 	srand(time(NULL));
 	
-	No_of_BSM = (rand() % 10) + rand() % 10;
+	No_of_BSM = (rand() % 10) + rand() % 10; //how many Cars to generate in this frame
 	
 	cout<<"number of BSM's generated in this cycle:"<<No_of_BSM<<endl;
 
@@ -75,14 +75,14 @@ int main(void)
 		int BSM_Id;
 		srand(No_of_BSM + i);
 		BSM_Id = (rand() % 10) + 1;
-		BSM_Id_List[i] = BSM_Id;
+		BSM_Id_List[i] = BSM_Id; //Car Id's generated in this frame
 	}
 	cout<<"BSM Id's generated in this cycle:"<<endl;
 	for(int i=0; i <No_of_BSM; i++)
 	{
 		cout<<BSM_Id_List[i]<<endl;
 	}
-	
+
 	std::set<int> BSM_Set(BSM_Id_List,(BSM_Id_List + No_of_BSM));
 	std::set<int>::iterator it;
 	
@@ -94,16 +94,58 @@ int main(void)
 	
 	int counter = 1,size;
 	
+	std::chrono::high_resolution_clock::time_point t1;
+	std::chrono::high_resolution_clock::time_point t2;
+	while(1)
+	{
+	
+	auto time = std::chrono::system_clock::now();
+	std::time_t t_time = std::chrono::system_clock::to_time_t(time);
+	//std::cout << "Started at------------- " << std::ctime(&t_time);
+	//cout<<endl;
+	
     while(counter <= history)
     {
-		cout<<"Data Set: "<<counter<<endl;
-		counter++;
+	
+		t2 = std::chrono::high_resolution_clock::now();
+						
+		std::chrono::duration<double, std::milli> time_span = t2 - t1;
+			
+
+	//	cout << "It took me------------------------------- " << time_span.count() << " milliseconds.";
+	//	cout << endl;
 		
+		double wait_time = 0;	
+		double abs_wait_time = 100 - time_span.count();
+		if(abs_wait_time < 0)
+		{
+			wait_time = 0;
+		}
+		else
+		{
+			wait_time = abs_wait_time;
+		}
+		
+	//	cout << "wait time------------------------------- "<< wait_time<<endl;
+		((counter == 1) ? Sleep(1) : Sleep(wait_time));
+			
+
+/*		std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
+		auto duration = now.time_since_epoch();
+		auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+		long long int temp;
+		cout<<(millis)<<endl;
+		cout<<"->->->"<<(millis - temp)<<endl;
+		temp = millis;
+		cout<<temp<<endl;
+*/		
+	//	cout<<"Data Set: "<<counter<<endl;
+		int inner_counter = 1;
 		for(it = BSM_Set.begin(); it != BSM_Set.end(); it++)
 		{
 			bsm.Dirty_flag = false;
 			bsm.BSM_Id = *it; 
-			bsm.GPS_Fix = 1; 
+			bsm.GPS_Fix = counter; 
 			bsm.Latitude = 18; 
 			bsm.Longitude = 73; 
 			bsm.Altitude = 500;
@@ -112,17 +154,22 @@ int main(void)
 			bsm.Altitude_Error = 0; 
 			bsm.Speed = *it + 10; 
 			bsm.Average_speed = 10; 
-			bsm.TimeStamp = 123456; 
+			bsm.TimeStamp = 12345;//std::chrono::system_clock::to_time_t( now ); 
 			
 			size = sizeof(bsm);
-			
+
 			if (sendto(s, (char*)&bsm, size , 0 , (struct sockaddr *) &si_other, slen) == SOCKET_ERROR)
 			{
 				cout<<"sendto() failed with error code : "<<WSAGetLastError();
 				exit(EXIT_FAILURE);
 			}
-					
-			cout<<"\tBSM Id: "<<bsm.BSM_Id<<endl;
+			if(inner_counter == 1)
+			{
+				t1 = std::chrono::high_resolution_clock::now();
+			}
+			inner_counter++;
+			
+	/*		cout<<"\tBSM Id: "<<bsm.BSM_Id<<endl;
 			cout<<"\tGPS Fix: "<<bsm.GPS_Fix<<endl; 
 			cout<<"\tLatitude: "<<bsm.Latitude<<endl; 
 			cout<<"\tLongitude: "<<bsm.Longitude<<endl; 
@@ -136,13 +183,12 @@ int main(void)
 			cout<<"\tTimeStamp: "<<bsm.TimeStamp<<endl;
 			
 			cout<<endl<<endl;
+	*/
 		}
-		
-		Sleep(10);
+		counter++;
     }
-	BSM_Id_List[No_of_BSM] = {0};
-	BSM_Set.clear();
-	//Sleep(2000);
+	counter = 1;
+	//cout<<"------------------------------------------------------------------------------------------------------------------"<<endl;
 	}
     closesocket(s);
     WSACleanup();
