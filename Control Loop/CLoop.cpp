@@ -7,11 +7,18 @@
 #include <chrono>
 #include<winsock2.h>
 #include <csignal>
+#include <thread>
+#include <mutex>
 using namespace std;
 
 #define PORT 8888   //The port on which to listen for incoming data
 
+mutex mtx1;
+mutex mtx2;
+
 void controlloop( int param);
+void timeloop( );
+
 
 struct BSM{
 bool Dirty_flag; 
@@ -25,24 +32,24 @@ double Long_Error;
 double Altitude_Error; 
 double Speed; 
 double Average_speed; 
-double TimeStamp; 
+long TimeStamp; 
 };
 
 std::vector<struct BSM> myvec;
-
+std::vector<struct BSM> tempvec; 
+void P2Loop(vector<struct BSM>);
 int main()
 {
+	
 	BSM bsm = {0};
     SOCKET s;
     struct sockaddr_in server, si_other;
     int slen , recv_len;
     int stlen = sizeof(bsm);
     WSADATA wsa;
-	void (*prev_handler)(int);
-	
-	std::vector<struct BSM> tempvec;    
+	   
     slen = sizeof(si_other) ;
-
+	
     cout<<"\nInitialising Winsock...";
 
     if (WSAStartup(MAKEWORD(2,2),&wsa) != 0)
@@ -72,15 +79,12 @@ int main()
 
     cout<<"Bind done"<<endl;
 	
-	
-    int counter = 1;
-	bool start = true;
-	long bt,et;
+	//int counter = 1;
+	thread time_mgmt(timeloop);
 	while(1)
     {
         //cout<<"Waiting for data...";
-		cout<<"..."<<"\t";
-		prev_handler = signal (SIGINT, controlloop);
+		//cout<<"..."<<"\t";
 		
 		fflush(stdout);
         //clear the buffer by filling null, it might have previously received data
@@ -90,14 +94,6 @@ int main()
             cout<<"recvfrom() failed with error code : "<< WSAGetLastError();
             exit(EXIT_FAILURE);
         }
-		
-		auto now = std::chrono::system_clock::now();
-		if(start == true)
-		{
-			bt = std::chrono::system_clock::to_time_t( now );
-			//cout<<"bt:"<<bt<<endl;
-			start = false;
-		}
 		
 		//cout<<"Data received: "<<counter<<endl;
 		//cout<<"number of bytes received: "<<recv_len<<endl;
@@ -120,35 +116,74 @@ int main()
 		cout<<endl<<endl;
 	*/		
 		//counter++;
-		
+		//SEM2 Critical section Start
+		mtx2.lock();
 		tempvec.push_back(bsm); 
-		
-		et = std::chrono::system_clock::to_time_t( now );
-		//cout<<"et:"<<et<<endl;
-		if((et - bt) >= 1)
-		{
-			//cout<<"tick"<<endl;
-			raise(SIGINT);
-			start = true;
-			cout<<"total Packets received in this frame:"<<counter<<endl;
-			counter = 0;
-			myvec = tempvec;
-			tempvec.clear();
-		}
-		counter++;
+		mtx2.unlock();
+		//SEM2 Critical section Ends	
+		//counter++;
 	}
 
+
+	//time_mgmt.join(); //not required , may be
 	closesocket(s);
     WSACleanup();
-	
 }
 
+void timeloop( )
+{
+	void (*prev_handler)(int);
+	bool start = true;
+	long bt,et;
+	while(1)
+	{
+	//cout<<__FUNCTION__<<endl;
+		prev_handler = signal (SIGINT, controlloop);
+		auto now = std::chrono::system_clock::now();
+		if(start == true)
+		{
+			bt = std::chrono::system_clock::to_time_t( now );
+			//cout<<"bt:"<<bt<<endl;
+			start = false;
+		}
+		
+		Sleep(1);
+		et = std::chrono::system_clock::to_time_t( now );
+		//cout<<"et:"<<et<<endl;
+		if((et - bt) == 1)
+		{
+			//cout<<"tick"<<endl;
+			start = true;
+			//cout<<"total Packets received in this frame:"<<counter<<endl;
+			//counter = 0;
+		//SEM1 Critical section Start
+			mtx1.lock();
+			myvec = tempvec;
+			mtx1.unlock();
+		//SEM1 Critical section Ends	
+		//SEM2 Critical section Start
+			mtx2.lock();
+			tempvec.clear();
+			mtx2.unlock();
+		//SEM2 Critical section Ends	
+			raise(SIGINT);
+			
+		}
+	
+	}
+
+}
+//Assuming Control Loop will take less then 1 sec
 void controlloop( int param)
 {
-		cout<<endl;
-		cout<<__FUNCTION__<<endl;
-	
+		//cout<<endl;
+		//cout<<__FUNCTION__<<endl;
 		
+	/*	auto time = std::chrono::system_clock::now();
+		std::time_t t_time = std::chrono::system_clock::to_time_t(time);
+		std::cout << "Started at------------- " << std::ctime(&t_time);
+		cout<<endl;
+	*/
 		std::list<int> mylist;
 		
 		std::vector<struct BSM>::iterator itv;
@@ -163,11 +198,11 @@ void controlloop( int param)
 	
 		std::list<int>::iterator it;
 
-		cout<<"Unique BSM Id:"<<endl;
+		//cout<<"Unique BSM Id:"<<endl;
 		
 		for(it = mylist.begin(); it != mylist.end(); ++it)
 		{
-			cout<<*it<<endl;
+			//cout<<*it<<endl;
 		}
 
 		//for(itv = myvec.begin(); itv != myvec.end(); itv++)
@@ -211,17 +246,21 @@ void controlloop( int param)
 			}
 		}
 
-
-	
-	cout<<"****************************Current Frame Data*****************************************************"<<endl;
+	//cout<<"****************************Current Frame Data*****************************************************"<<endl;
 	
 	for(itm = mymap.begin(); itm != mymap.end(); itm++) //To print the data
 	{
-		cout<<"BSM ID: "<<(*itm).first<<endl<<endl;
+		//cout<<"BSM ID: "<<(*itm).first<<endl<<endl;
 		
 		vector<struct BSM> tempVec = (*itm).second;
+		vector<struct BSM> passVec(tempVec);
 		
-		for(int i=0; i < tempVec.size(); i++)
+		thread computationloop(P2Loop,passVec);
+		
+		computationloop.join();	
+		//P2Loop(passVec);
+		
+		/*for(int i=0; i < tempVec.size(); i++)
 		{
 			cout<<"\tBSM Id: "<<tempVec[i].BSM_Id<<endl;
 			cout<<"\tGPS Fix: "<<tempVec[i].GPS_Fix<<endl; 
@@ -237,14 +276,46 @@ void controlloop( int param)
 			cout<<"\tDirty Flag: "<<tempVec[i].Dirty_flag<<endl;
 			
 			cout<<endl;
-		}
+			
+		}*/
+		
 	}
 	
+	//SEM1 Critical section Start
+	mtx1.lock();
 	myvec.clear();
+	//SEM1 Critical section Ends
+	mtx1.unlock();
 	mylist.clear();
 	mymap.clear();
 	//Sleep(15000);
 
 	//return 0;
+}
+
+void P2Loop(vector<struct BSM> vehicle)
+{
+		cout<<__FUNCTION__<<endl;
+		vector<struct BSM>::iterator it;
+		cout<<vehicle.size()<<endl;
+		
+		for(it = vehicle.begin(); it != vehicle.end(); it++)
+		{
+			cout<<"\tBSM Id: "<<it->BSM_Id<<endl;
+			cout<<"\tGPS Fix: "<<it->GPS_Fix<<endl; 
+			cout<<"\tLatitude: "<<it->Latitude<<endl; 
+			cout<<"\tLongitude: "<<it->Longitude<<endl; 
+			cout<<"\tAltitude: "<<it->Altitude<<endl;
+			cout<<"\tLatitude Error: "<<it->Lat_Error<<endl; 
+			cout<<"\tLongitude Error: "<<it->Long_Error<<endl; 
+			cout<<"\tAltitude Error: "<<it->Altitude_Error<<endl; 
+			cout<<"\tSpeed: "<<it->Speed<<endl; 
+			cout<<"\tAverage Speed: "<<it->Average_speed<<endl; 
+			cout<<"\tTimeStamp: "<<it->TimeStamp<<endl; 
+			cout<<"\tDirty Flag: "<<it->Dirty_flag<<endl;
+			
+			cout<<endl;
+			
+		}
 }
 
