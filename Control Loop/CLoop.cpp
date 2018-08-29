@@ -15,6 +15,7 @@ using namespace std;
 
 mutex mtx1;
 mutex mtx2;
+mutex atm;
 
 void controlloop( int param);
 void timeloop( );
@@ -138,7 +139,7 @@ void timeloop( )
 	while(1)
 	{
 	//cout<<__FUNCTION__<<endl;
-		prev_handler = signal (SIGINT, controlloop);
+		prev_handler = signal (SIGINT, controlloop); //signal handler may be useful if it supports cloning
 		auto now = std::chrono::system_clock::now();
 		if(start == true)
 		{
@@ -204,6 +205,7 @@ void controlloop( int param)
 		{
 			//cout<<*it<<endl;
 		}
+		int connected_bsm = mylist.size();
 
 		//for(itv = myvec.begin(); itv != myvec.end(); itv++)
 		{
@@ -247,7 +249,7 @@ void controlloop( int param)
 		}
 
 	//cout<<"****************************Current Frame Data*****************************************************"<<endl;
-	
+	vector<thread> threads;
 	for(itm = mymap.begin(); itm != mymap.end(); itm++) //To print the data
 	{
 		//cout<<"BSM ID: "<<(*itm).first<<endl<<endl;
@@ -255,9 +257,12 @@ void controlloop( int param)
 		vector<struct BSM> tempVec = (*itm).second;
 		vector<struct BSM> passVec(tempVec);
 		
-		thread computationloop(P2Loop,passVec);
-		
-		computationloop.join();	
+		//thread computationloop(P2Loop,passVec);
+		//computationloop.join();	
+		//require the parallel computation
+			
+		threads.emplace_back(P2Loop,passVec);
+ 
 		//P2Loop(passVec);
 		
 		/*for(int i=0; i < tempVec.size(); i++)
@@ -290,18 +295,25 @@ void controlloop( int param)
 	mymap.clear();
 	//Sleep(15000);
 
+	for(thread& t: threads)
+	{
+		t.join();//wait for them to finish execution 
+	}
+	
+	threads.clear();
 	//return 0;
 }
 
 void P2Loop(vector<struct BSM> vehicle)
 {
-		cout<<__FUNCTION__<<endl;
+		//cout<<__FUNCTION__<<endl;
+		std::unique_lock<std::mutex> lck (atm);//just for maintaining the atomicity of thread
 		vector<struct BSM>::iterator it;
-		cout<<vehicle.size()<<endl;
+		cout<<"Msg:"<<vehicle.size()<<endl;
 		
 		for(it = vehicle.begin(); it != vehicle.end(); it++)
 		{
-			cout<<"\tBSM Id: "<<it->BSM_Id<<endl;
+			cout<<"BSM Id: "<<it->BSM_Id<<endl;
 			cout<<"\tGPS Fix: "<<it->GPS_Fix<<endl; 
 			cout<<"\tLatitude: "<<it->Latitude<<endl; 
 			cout<<"\tLongitude: "<<it->Longitude<<endl; 
@@ -315,7 +327,6 @@ void P2Loop(vector<struct BSM> vehicle)
 			cout<<"\tDirty Flag: "<<it->Dirty_flag<<endl;
 			
 			cout<<endl;
-			
 		}
 }
 
