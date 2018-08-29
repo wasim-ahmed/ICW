@@ -10,7 +10,7 @@
 
 using namespace std;
 
-#define SERVER "10.10.71.159"
+//#define SERVER "10.10.71.159"
 #define PORT 8888   //The port on which to listen for incoming data
 
 #define history 10
@@ -53,11 +53,13 @@ int main(void)
         cout<<"socket() failed with error code : "<<WSAGetLastError();
         exit(EXIT_FAILURE);
     }
-
+	int nOpt = 1;
+	setsockopt(s, SOL_SOCKET, SO_BROADCAST, (char*)&nOpt, sizeof(int));//for broadcast
     memset((char *) &si_other, 0, sizeof(si_other));
     si_other.sin_family = AF_INET;
     si_other.sin_port = htons(PORT);
-    si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
+    //si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
+	si_other.sin_addr.s_addr = INADDR_BROADCAST;//broadcast
 
 	//while(1)
 	
