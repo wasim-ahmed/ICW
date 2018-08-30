@@ -17,10 +17,6 @@ mutex mtx1;
 mutex mtx2;
 mutex atm;
 
-void controlloop( int param);
-void timeloop( );
-
-
 struct BSM{
 bool Dirty_flag; 
 int BSM_Id; 
@@ -36,12 +32,25 @@ double Average_speed;
 long TimeStamp; 
 };
 
+void connectLoop();
+void controlloop( int param);
+void timeloop( );
+void computationLoop(vector<struct BSM>);
+void processLoop();
+void predictLoop(int confidenceLevel);
+void threatAssessmentLoop(int threatZone);
+
+
 std::vector<struct BSM> myvec;
 std::vector<struct BSM> tempvec; 
-void P2Loop(vector<struct BSM>);
+
+
+
 int main()
 {
-	
+	int dataPoint = 1;//This is in second assuming in 1 second we will get 10 data points
+	int threatZone = 1;
+	int confidenceLevel = 3;
 	BSM bsm = {0};
     SOCKET s;
     struct sockaddr_in server, si_other;
@@ -82,6 +91,8 @@ int main()
 	
 	//int counter = 1;
 	thread time_mgmt(timeloop);
+	thread connect(connectLoop);
+	thread assess(threatAssessmentLoop,threatZone);
 	while(1)
     {
         //cout<<"Waiting for data...";
@@ -116,7 +127,6 @@ int main()
 
 		cout<<endl<<endl;
 	*/		
-		//counter++;
 		//SEM2 Critical section Start
 		mtx2.lock();
 		tempvec.push_back(bsm); 
@@ -130,12 +140,145 @@ int main()
 	closesocket(s);
     WSACleanup();
 }
+void connectLoop()
+{
+	cout<<__FUNCTION__<<endl;
+	//The Logic of BSIM (send your BSM @ 10 Hz)
+	
+	BSM bsm;
+	
+	struct sockaddr_in si_other;
+    int s, slen=sizeof(si_other);
+    WSADATA wsa;
 
+    cout<<"\nInitialising Winsock..."<<endl;
+
+    if (WSAStartup(MAKEWORD(2,2),&wsa) != 0)
+    {
+        cout<<"Failed. Error Code : "<<WSAGetLastError();
+        exit(EXIT_FAILURE);
+    }
+
+    cout<<"Initialised.\n";
+
+    if ( (s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == SOCKET_ERROR)
+    {
+        cout<<"socket() failed with error code : "<<WSAGetLastError();
+        exit(EXIT_FAILURE);
+    }
+	int nOpt = 1;
+	setsockopt(s, SOL_SOCKET, SO_BROADCAST, (char*)&nOpt, sizeof(int));//for broadcast
+    memset((char *) &si_other, 0, sizeof(si_other));
+    si_other.sin_family = AF_INET;
+    si_other.sin_port = htons(PORT);
+    //si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
+	si_other.sin_addr.s_addr = INADDR_BROADCAST;//broadcast
+
+	//while(1)
+	
+	//getch();
+	
+	int counter = 1,size;
+	
+	std::chrono::high_resolution_clock::time_point t1;
+	std::chrono::high_resolution_clock::time_point t2;
+	while(1)
+	{
+	
+	//auto time = std::chrono::system_clock::now();
+	//std::time_t t_time = std::chrono::system_clock::to_time_t(time);
+	//std::cout << "Started at------------- " << std::ctime(&t_time);
+	//cout<<endl;
+	
+	
+		t2 = std::chrono::high_resolution_clock::now();
+						
+		std::chrono::duration<double, std::milli> time_span = t2 - t1;
+			
+
+	//	cout << "It took me------------------------------- " << time_span.count() << " milliseconds.";
+	//	cout << endl;
+		
+		double wait_time = 0;	
+		double abs_wait_time = 100 - time_span.count();
+		if(abs_wait_time < 0)
+		{
+			wait_time = 0;
+		}
+		else
+		{
+			wait_time = abs_wait_time;
+		}
+		
+	//	cout << "wait time------------------------------- "<< wait_time<<endl;
+		((counter == 1) ? Sleep(1) : Sleep(wait_time));
+			
+
+/*		std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
+		auto duration = now.time_since_epoch();
+		auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+		long long int temp;
+		cout<<(millis)<<endl;
+		cout<<"->->->"<<(millis - temp)<<endl;
+		temp = millis;
+		cout<<temp<<endl;
+*/		
+	//	cout<<"Data Set: "<<counter<<endl;
+				//Fill in your data
+			bsm.Dirty_flag = false;
+			bsm.BSM_Id = 21; 
+			bsm.GPS_Fix = 1; 
+			bsm.Latitude = 18; 
+			bsm.Longitude = 73; 
+			bsm.Altitude = 500;
+			bsm.Lat_Error = 0; 
+			bsm.Long_Error = 0; 
+			bsm.Altitude_Error = 0; 
+			bsm.Speed = 10; 
+			bsm.Average_speed = 10; 
+			bsm.TimeStamp = 12345;//std::chrono::system_clock::to_time_t( now ); 
+			
+			size = sizeof(bsm);
+
+			if (sendto(s, (char*)&bsm, size , 0 , (struct sockaddr *) &si_other, slen) == SOCKET_ERROR)
+			{
+				cout<<"sendto() failed with error code : "<<WSAGetLastError();
+				exit(EXIT_FAILURE);
+			}
+			
+			t1 = std::chrono::high_resolution_clock::now();
+			
+	/*		cout<<"\tBSM Id: "<<bsm.BSM_Id<<endl;
+			cout<<"\tGPS Fix: "<<bsm.GPS_Fix<<endl; 
+			cout<<"\tLatitude: "<<bsm.Latitude<<endl; 
+			cout<<"\tLongitude: "<<bsm.Longitude<<endl; 
+			cout<<"\tAltitude: "<<bsm.Altitude<<endl;
+			cout<<"\tLatitude Error: "<<bsm.Lat_Error<<endl; 
+			cout<<"\tLongitude Error: "<<bsm.Long_Error<<endl; 
+			cout<<"\tAltitude Error: "<<bsm.Altitude_Error<<endl; 
+			cout<<"\tSpeed: "<<bsm.Speed<<endl; 
+			cout<<"\tAverage Speed: "<<bsm.Average_speed<<endl; 
+			cout<<"\tDirty Flag: "<<bsm.Dirty_flag<<endl;
+			cout<<"\tTimeStamp: "<<bsm.TimeStamp<<endl;
+			
+			cout<<endl<<endl;
+	*/
+		
+		counter++;
+ 	
+	//cout<<"------------------------------------------------------------------------------------------------------------------"<<endl;
+	}
+    closesocket(s);
+    WSACleanup();
+
+   
+}
 void timeloop( )
 {
 	void (*prev_handler)(int);
 	bool start = true;
 	long bt,et;
+	int dataPoint = 1;//make it 2 for 20 data points & so forth
 	while(1)
 	{
 	//cout<<__FUNCTION__<<endl;
@@ -151,7 +294,7 @@ void timeloop( )
 		Sleep(1);
 		et = std::chrono::system_clock::to_time_t( now );
 		//cout<<"et:"<<et<<endl;
-		if((et - bt) == 1)
+		if((et - bt) == dataPoint)
 		{
 			//cout<<"tick"<<endl;
 			start = true;
@@ -257,13 +400,13 @@ void controlloop( int param)
 		vector<struct BSM> tempVec = (*itm).second;
 		vector<struct BSM> passVec(tempVec);
 		
-		//thread computationloop(P2Loop,passVec);
+		//thread computationloop(P2Loop,passVec);//spawning a thread & waiting for it's execution
 		//computationloop.join();	
 		//require the parallel computation
 			
-		threads.emplace_back(P2Loop,passVec);
+		threads.emplace_back(computationLoop,passVec);
  
-		//P2Loop(passVec);
+		//P2Loop(passVec);//in case if you want a function
 		
 		/*for(int i=0; i < tempVec.size(); i++)
 		{
@@ -304,7 +447,7 @@ void controlloop( int param)
 	//return 0;
 }
 
-void P2Loop(vector<struct BSM> vehicle)
+void computationLoop(vector<struct BSM> vehicle)
 {
 		//cout<<__FUNCTION__<<endl;
 		std::unique_lock<std::mutex> lck (atm);//just for maintaining the atomicity of thread
@@ -328,5 +471,23 @@ void P2Loop(vector<struct BSM> vehicle)
 			
 			cout<<endl;
 		}
+		
+		processLoop();//sanity test 
+		int confidenceLevel = 3;
+		predictLoop(confidenceLevel);//predict
 }
 
+void processLoop()
+{
+	cout<<__FUNCTION__<<endl;
+}
+
+void predictLoop(int confidenceLevel)
+{
+	cout<<__FUNCTION__<<endl;
+}
+
+void threatAssessmentLoop(int threatZone)
+{
+	cout<<__FUNCTION__<<endl;
+}
