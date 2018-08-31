@@ -9,6 +9,8 @@
 #include <csignal>
 #include <thread>
 #include <mutex>
+#include <queue>
+#include <condition_variable>
 using namespace std;
 
 #define PORT 8888   //The port on which to listen for incoming data
@@ -16,41 +18,56 @@ using namespace std;
 mutex mtx1;
 mutex mtx2;
 mutex atm;
+mutex lock_mtx;
 
 struct BSM{
-bool Dirty_flag; 
-int BSM_Id; 
-int GPS_Fix; 
-double Latitude; 
-double Longitude; 
-double Altitude;
-double Lat_Error; 
-double Long_Error; 
-double Altitude_Error; 
-double Speed; 
-double Average_speed; 
-long TimeStamp; 
+	bool Dirty_flag; 
+	int BSM_Id; 
+	int GPS_Fix; 
+	double Latitude; 
+	double Longitude; 
+	double Altitude;
+	double Lat_Error; 
+	double Long_Error; 
+	double Altitude_Error; 
+	double Speed; 
+	double Average_speed; 
+	long TimeStamp; 
+};
+
+struct predicted
+{
+	int BSM_Id; 
+	double Latitude; 
+	double Longitude;
+	double Altitude;	
 };
 
 void connectLoop();
 void controlloop( int param);
 void timeloop( );
 void computationLoop(vector<struct BSM>);
-void processLoop();
-void predictLoop(int confidenceLevel);
+void processLoop(vector<struct BSM>&);
+struct predicted predictLoop(vector<struct BSM>,int confidenceLevel);
 void threatAssessmentLoop(int threatZone);
 
 
 std::vector<struct BSM> myvec;
 std::vector<struct BSM> tempvec; 
+std::queue<struct predicted> myqueue;
+std::condition_variable cv;
 
+const int threatZone = 1;
+const int confidenceLevel = 3;
+const int self_BSM_id = 21;
+bool lockX = false;
 
 
 int main()
 {
 	int dataPoint = 1;//This is in second assuming in 1 second we will get 10 data points
-	int threatZone = 1;
-	int confidenceLevel = 3;
+	
+	
 	BSM bsm = {0};
     SOCKET s;
     struct sockaddr_in server, si_other;
@@ -444,6 +461,12 @@ void controlloop( int param)
 	}
 	
 	threads.clear();
+	//time for threat assessment loop to start
+		{
+		  std::unique_lock<std::mutex> lck(lock_mtx);
+		  lockX = true;
+		  cv.notify_all();
+		}
 	//return 0;
 }
 
@@ -454,7 +477,7 @@ void computationLoop(vector<struct BSM> vehicle)
 		vector<struct BSM>::iterator it;
 		cout<<"Msg:"<<vehicle.size()<<endl;
 		
-		for(it = vehicle.begin(); it != vehicle.end(); it++)
+	/*	for(it = vehicle.begin(); it != vehicle.end(); it++)
 		{
 			cout<<"BSM Id: "<<it->BSM_Id<<endl;
 			cout<<"\tGPS Fix: "<<it->GPS_Fix<<endl; 
@@ -471,23 +494,129 @@ void computationLoop(vector<struct BSM> vehicle)
 			
 			cout<<endl;
 		}
-		
-		processLoop();//sanity test 
-		int confidenceLevel = 3;
-		predictLoop(confidenceLevel);//predict
+	*/	
+		processLoop(vehicle);//sanity test 
+		predicted p = {0};
+		p = predictLoop(vehicle,confidenceLevel);//predict
+		myqueue.push(p);
 }
 
-void processLoop()
+void processLoop(vector<struct BSM>& vehicle)
 {
-	cout<<__FUNCTION__<<endl;
+	//cout<<__FUNCTION__<<endl;
+	//Fix missing samples	NA
+	
+	//Fix spurious data & handle the dirty flag
+				//take the Errors into consideration
+		//double Lat_Error; 
+		//double Long_Error; 
+		//double Altitude_Error; 
+	
+	//Altitude consideration NA
+	
 }
 
-void predictLoop(int confidenceLevel)
+struct predicted predictLoop(vector<struct BSM> vehicle,int confidenceLevel)
 {
-	cout<<__FUNCTION__<<endl;
+	//cout<<__FUNCTION__<<endl;
+	cout<<"..............H		E	L	P............S		O	S......"<<endl;
+	predicted p;
+	//p.Latitude = 1; 
+	//p.Longitude = 1; 
+	//p.Altitude;
+	//p.BSM_Id;
+	
+	vector<struct BSM>::iterator it;
+		for(it = vehicle.begin(); it != vehicle.end(); it++)
+		{
+		/*
+			cout<<"BSM Id: "<<it->BSM_Id<<endl;
+			cout<<"\tGPS Fix: "<<it->GPS_Fix<<endl; 
+			cout<<"\tLatitude: "<<it->Latitude<<endl; 
+			cout<<"\tLongitude: "<<it->Longitude<<endl; 
+			cout<<"\tAltitude: "<<it->Altitude<<endl;
+			cout<<"\tLatitude Error: "<<it->Lat_Error<<endl; 
+			cout<<"\tLongitude Error: "<<it->Long_Error<<endl; 
+			cout<<"\tAltitude Error: "<<it->Altitude_Error<<endl; 
+			cout<<"\tSpeed: "<<it->Speed<<endl; 
+			cout<<"\tAverage Speed: "<<it->Average_speed<<endl; 
+			cout<<"\tTimeStamp: "<<it->TimeStamp<<endl; 
+			cout<<"\tDirty Flag: "<<it->Dirty_flag<<endl;
+		*/	
+			p.Latitude = it->Latitude + 0.001; 
+			p.Longitude = it->Longitude + 0.001; 
+			p.Altitude = it->Altitude;
+			p.BSM_Id = it->BSM_Id;
+			
+			//cout<<endl;
+		}
+	
+	return p;
 }
 
 void threatAssessmentLoop(int threatZone)
 {
-	cout<<__FUNCTION__<<endl;
+	//cout<<__FUNCTION__<<endl;
+	predicted self,temp;
+	std::vector<struct predicted> calcvec;
+	//wait foe all the threads to complete prediction, wait for signal
+	while(1)
+	{
+	std::unique_lock<std::mutex> lck(lock_mtx);
+	while(!lockX) cv.wait(lck);
+	
+	//cout<<"Got the Lock go ahead"<<endl;
+	
+		while(!myqueue.empty())
+		{
+			/*cout<<myqueue.front().BSM_Id<<endl;
+			cout<<myqueue.front().Latitude<<endl; 
+			cout<<myqueue.front().Longitude<<endl; 
+			cout<<myqueue.front().Altitude<<endl;*/
+			if(myqueue.front().BSM_Id == self_BSM_id)
+			{
+				self.BSM_Id = myqueue.front().BSM_Id;
+				self.Latitude = myqueue.front().Latitude;
+				self.Longitude = myqueue.front().Longitude;
+				self.Altitude = myqueue.front().Altitude;
+			}
+			else{
+				temp.BSM_Id = myqueue.front().BSM_Id;
+				temp.Latitude = myqueue.front().Latitude;
+				temp.Longitude = myqueue.front().Longitude;
+				temp.Altitude = myqueue.front().Altitude;
+				calcvec.push_back(temp);
+			}
+			
+			
+			
+			myqueue.pop();
+		}
+		
+		//myqueue.empty() == true ? cout<<"COOL"<<endl : cout<<"Nama Cool"<<endl;
+		
+			cout<<"Self predicted data:"<<endl;
+			cout<<self.BSM_Id<<endl;
+			cout<<self.Latitude<<endl;
+			cout<<self.Longitude<<endl;
+			cout<<self.Altitude<<endl;
+			
+			cout<<endl<<endl;
+
+			cout<<"Rest prediction data:"<<endl;
+			vector<struct predicted>::iterator it;
+			for(it = calcvec.begin();it != calcvec.end();it++)
+			{
+				cout<<it->BSM_Id<<endl;
+				cout<<it->Latitude<<endl;
+				cout<<it->Longitude<<endl;
+				cout<<it->Altitude<<endl;
+				cout<<endl;
+			}
+			
+			cout<<"vector size"<<calcvec.size()<<endl;
+		
+	calcvec.clear();	
+	lockX = false;//make the lock unavailable
+	}
 }
