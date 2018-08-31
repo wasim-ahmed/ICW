@@ -1,3 +1,7 @@
+//Compilation: CLoop.exe
+//g++ -c -std=c++11 -pthread CLoop.cpp
+//g++ -o CLoop.exe CLoop.o -l ws2_32
+//Compiler required on windows : MinGW 4.8.1
 #include <iostream>
 #include <list>
 #include <map>
@@ -11,9 +15,11 @@
 #include <mutex>
 #include <queue>
 #include <condition_variable>
+#include <cmath>
 using namespace std;
 
 #define PORT 8888   //The port on which to listen for incoming data
+#define PI 3.14159265
 
 mutex mtx1;
 mutex mtx2;
@@ -50,24 +56,27 @@ void computationLoop(vector<struct BSM>);
 void processLoop(vector<struct BSM>&);
 struct predicted predictLoop(vector<struct BSM>,int confidenceLevel);
 void threatAssessmentLoop(int threatZone);
+double calculateDistance(double,double,double,double);
 
 
-std::vector<struct BSM> myvec;
-std::vector<struct BSM> tempvec; 
-std::queue<struct predicted> myqueue;
-std::condition_variable cv;
+std::vector<struct BSM> myvec; //the data of vehicle connected
+std::vector<struct BSM> tempvec; //for receiving data from other vehicles
+std::queue<struct predicted> myqueue;//Message Q to hold the predicted locations of vehicle in computation
+std::condition_variable cv;//for synchronising threatAssessmentLoop
 
-const int threatZone = 1;
-const int confidenceLevel = 3;
+const int threatZone = 5;//in meters
+const int confidenceLevel = 3;//in seconds
 const int self_BSM_id = 21;
-bool lockX = false;
+const int radius_of_earth = 6371;
+const int dataPoint = 1;//This is in second. 1 second we will get 10 data points
+const int periodicity = 100;//in ms
+const int altitude_clearance  = 5;//in meters
+bool lockX = false;//for synchronising threatAssessmentLoop
 
 
+//Receives the data from other vehicles and fill the vector
 int main()
 {
-	int dataPoint = 1;//This is in second assuming in 1 second we will get 10 data points
-	
-	
 	BSM bsm = {0};
     SOCKET s;
     struct sockaddr_in server, si_other;
@@ -77,22 +86,18 @@ int main()
 	   
     slen = sizeof(si_other) ;
 	
-    cout<<"\nInitialising Winsock...";
-
     if (WSAStartup(MAKEWORD(2,2),&wsa) != 0)
     {
-        cout<<"Failed. Error Code : "<<WSAGetLastError();
+        cout<<"Receiver Failed. Error Code : "<<WSAGetLastError();
         exit(EXIT_FAILURE);
     }
 
-    cout<<"Initialised.\n";
-
     if((s = socket(AF_INET , SOCK_DGRAM , 0 )) == INVALID_SOCKET)
     {
-        cout<<"Could not create socket : "<<WSAGetLastError();
+        cout<<"Receiver Could not create socket : "<<WSAGetLastError();
     }
 
-    cout<<"Socket created.\n";
+    //cout<<"Receiver Socket created.\n";
 
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = INADDR_ANY;
@@ -100,21 +105,18 @@ int main()
 
     if( bind(s ,(struct sockaddr *)&server , sizeof(server)) == SOCKET_ERROR)
     {
-        cout<<"Bind failed with error code : "<<WSAGetLastError();
+        cout<<"Receiver Bind failed with error code : "<<WSAGetLastError();
         exit(EXIT_FAILURE);
     }
 
-    cout<<"Bind done"<<endl;
+    //cout<<"Receiver Bind done"<<endl;
 	
-	//int counter = 1;
+	//Spawn the required threads
 	thread time_mgmt(timeloop);
 	thread connect(connectLoop);
 	thread assess(threatAssessmentLoop,threatZone);
 	while(1)
     {
-        //cout<<"Waiting for data...";
-		//cout<<"..."<<"\t";
-		
 		fflush(stdout);
         //clear the buffer by filling null, it might have previously received data
 		                
@@ -124,7 +126,6 @@ int main()
             exit(EXIT_FAILURE);
         }
 		
-		//cout<<"Data received: "<<counter<<endl;
 		//cout<<"number of bytes received: "<<recv_len<<endl;
 
        // cout<<"Received packet from"<<inet_ntoa(si_other.sin_addr)<<":"<<ntohs(si_other.sin_port)<<endl;
@@ -144,22 +145,19 @@ int main()
 
 		cout<<endl<<endl;
 	*/		
-		//SEM2 Critical section Start
-		mtx2.lock();
+		mtx2.lock();//SEM2 Critical section Start
 		tempvec.push_back(bsm); 
-		mtx2.unlock();
-		//SEM2 Critical section Ends	
-		//counter++;
+		mtx2.unlock();//SEM2 Critical section Ends	
 	}
-
-
-	//time_mgmt.join(); //not required , may be
 	closesocket(s);
     WSACleanup();
 }
+
+//This function send the ego vehicle data out at 10 Hz
+//take the data from GPs/CAN Bus fill the data and send
 void connectLoop()
 {
-	cout<<__FUNCTION__<<endl;
+	//cout<<__FUNCTION__<<endl;
 	//The Logic of BSIM (send your BSM @ 10 Hz)
 	
 	BSM bsm;
@@ -168,19 +166,15 @@ void connectLoop()
     int s, slen=sizeof(si_other);
     WSADATA wsa;
 
-    cout<<"\nInitialising Winsock..."<<endl;
-
     if (WSAStartup(MAKEWORD(2,2),&wsa) != 0)
     {
-        cout<<"Failed. Error Code : "<<WSAGetLastError();
+        cout<<"Sender Failed. Error Code : "<<WSAGetLastError();
         exit(EXIT_FAILURE);
     }
 
-    cout<<"Initialised.\n";
-
     if ( (s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == SOCKET_ERROR)
     {
-        cout<<"socket() failed with error code : "<<WSAGetLastError();
+        cout<<"Sender socket() failed with error code : "<<WSAGetLastError();
         exit(EXIT_FAILURE);
     }
 	int nOpt = 1;
@@ -191,33 +185,28 @@ void connectLoop()
     //si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
 	si_other.sin_addr.s_addr = INADDR_BROADCAST;//broadcast
 
-	//while(1)
-	
-	//getch();
 	
 	int counter = 1,size;
-	
+	//maintain the periodicity of 10Hz and send BSM
 	std::chrono::high_resolution_clock::time_point t1;
 	std::chrono::high_resolution_clock::time_point t2;
 	while(1)
 	{
 	
-	//auto time = std::chrono::system_clock::now();
+	//auto time = std::chrono::system_clock::now();//just to get the current time
 	//std::time_t t_time = std::chrono::system_clock::to_time_t(time);
 	//std::cout << "Started at------------- " << std::ctime(&t_time);
 	//cout<<endl;
-	
 	
 		t2 = std::chrono::high_resolution_clock::now();
 						
 		std::chrono::duration<double, std::milli> time_span = t2 - t1;
 			
-
 	//	cout << "It took me------------------------------- " << time_span.count() << " milliseconds.";
 	//	cout << endl;
 		
 		double wait_time = 0;	
-		double abs_wait_time = 100 - time_span.count();
+		double abs_wait_time = periodicity - time_span.count();
 		if(abs_wait_time < 0)
 		{
 			wait_time = 0;
@@ -228,7 +217,7 @@ void connectLoop()
 		}
 		
 	//	cout << "wait time------------------------------- "<< wait_time<<endl;
-		((counter == 1) ? Sleep(1) : Sleep(wait_time));
+		((counter == 1) ? Sleep(1) : Sleep(wait_time));//wait to maintain 10 Hz periodicity
 			
 
 /*		std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
@@ -240,8 +229,7 @@ void connectLoop()
 		temp = millis;
 		cout<<temp<<endl;
 */		
-	//	cout<<"Data Set: "<<counter<<endl;
-				//Fill in your data
+		//Fill in your data from GPS & CAN Bus
 			bsm.Dirty_flag = false;
 			bsm.BSM_Id = 21; 
 			bsm.GPS_Fix = 1; 
@@ -282,23 +270,21 @@ void connectLoop()
 	*/
 		
 		counter++;
- 	
-	//cout<<"------------------------------------------------------------------------------------------------------------------"<<endl;
 	}
     closesocket(s);
     WSACleanup();
-
-   
 }
+
+//This function will gather the required amount of dataPoint 's & fill it in myvec vector .
+//It strictly maintain the timing required for dataPoint like 1 sec for 10 data points, 2 sec for 20 dataPoint & so on.
 void timeloop( )
 {
 	void (*prev_handler)(int);
 	bool start = true;
 	long bt,et;
-	int dataPoint = 1;//make it 2 for 20 data points & so forth
+	
 	while(1)
 	{
-	//cout<<__FUNCTION__<<endl;
 		prev_handler = signal (SIGINT, controlloop); //signal handler may be useful if it supports cloning
 		auto now = std::chrono::system_clock::now();
 		if(start == true)
@@ -308,44 +294,42 @@ void timeloop( )
 			start = false;
 		}
 		
-		Sleep(1);
+		Sleep(1);//Sleep for some time & don't eat the cpu
+		
 		et = std::chrono::system_clock::to_time_t( now );
 		//cout<<"et:"<<et<<endl;
 		if((et - bt) == dataPoint)
 		{
 			//cout<<"tick"<<endl;
 			start = true;
-			//cout<<"total Packets received in this frame:"<<counter<<endl;
-			//counter = 0;
-		//SEM1 Critical section Start
-			mtx1.lock();
+		
+			mtx1.lock();//SEM1 Critical section Start
 			myvec = tempvec;
-			mtx1.unlock();
-		//SEM1 Critical section Ends	
-		//SEM2 Critical section Start
-			mtx2.lock();
+			mtx1.unlock();//SEM1 Critical section Ends	
+		
+			mtx2.lock();//SEM2 Critical section Start
 			tempvec.clear();
-			mtx2.unlock();
-		//SEM2 Critical section Ends	
-			raise(SIGINT);
-			
+			mtx2.unlock();//SEM2 Critical section Ends	
+		
+			raise(SIGINT);//Start the control as now we have latest data.
 		}
-	
 	}
-
 }
+
 //Assuming Control Loop will take less then 1 sec
+//This function will process the data gathered in last 1 sec
+//and arrange the data w.r.t vehicles
 void controlloop( int param)
 {
 		//cout<<endl;
 		//cout<<__FUNCTION__<<endl;
 		
-	/*	auto time = std::chrono::system_clock::now();
+	/*	auto time = std::chrono::system_clock::now(); //Just for checking the start time of loop
 		std::time_t t_time = std::chrono::system_clock::to_time_t(time);
 		std::cout << "Started at------------- " << std::ctime(&t_time);
 		cout<<endl;
 	*/
-		std::list<int> mylist;
+		std::list<int> mylist;//required to find the unique entry of vehicle as there will be multiple data from same vehicle
 		
 		std::vector<struct BSM>::iterator itv;
 	
@@ -365,7 +349,7 @@ void controlloop( int param)
 		{
 			//cout<<*it<<endl;
 		}
-		int connected_bsm = mylist.size();
+		//int connected_bsm = mylist.size();
 
 		//for(itv = myvec.begin(); itv != myvec.end(); itv++)
 		{
@@ -384,7 +368,7 @@ void controlloop( int param)
 		*/	
 		}	
 	
-		std::map<int,vector<struct BSM>> mymap;
+		std::map<int,vector<struct BSM>> mymap;//required to arrange the data w.r.t vehicle
 		std::map<int,vector<struct BSM>>::iterator itm; 
 		
 		for(it = mylist.begin(); it != mylist.end(); it++)
@@ -401,6 +385,7 @@ void controlloop( int param)
 			{
 				//cout<<"Got It"<<itv->BSM_Id<<endl;
 				mymap[itv->BSM_Id].push_back(*itv); //Pushing the BSM data (vector) on the same id
+													//So that each vehicle will have it's history data points
 			}
 			else
 			{
@@ -408,74 +393,66 @@ void controlloop( int param)
 			}
 		}
 
-	//cout<<"****************************Current Frame Data*****************************************************"<<endl;
-	vector<thread> threads;
-	for(itm = mymap.begin(); itm != mymap.end(); itm++) //To print the data
+	vector<thread> threads;//vector to contain threads for individual vehicle
+	
+	for(itm = mymap.begin(); itm != mymap.end(); itm++) //Now the mymap contains the data arranged w.r.t vehicle we can spawn the threads
 	{
 		//cout<<"BSM ID: "<<(*itm).first<<endl<<endl;
 		
-		vector<struct BSM> tempVec = (*itm).second;
-		vector<struct BSM> passVec(tempVec);
+		vector<struct BSM> localVec = (*itm).second;
+		vector<struct BSM> passVec(localVec);
 		
-		//thread computationloop(P2Loop,passVec);//spawning a thread & waiting for it's execution
-		//computationloop.join();	
-		//require the parallel computation
-			
-		threads.emplace_back(computationLoop,passVec);
- 
-		//P2Loop(passVec);//in case if you want a function
-		
-		/*for(int i=0; i < tempVec.size(); i++)
+		threads.emplace_back(computationLoop,passVec); //require the parallel computation
+				
+		/*for(int i=0; i < localVec.size(); i++)
 		{
-			cout<<"\tBSM Id: "<<tempVec[i].BSM_Id<<endl;
-			cout<<"\tGPS Fix: "<<tempVec[i].GPS_Fix<<endl; 
-			cout<<"\tLatitude: "<<tempVec[i].Latitude<<endl; 
-			cout<<"\tLongitude: "<<tempVec[i].Longitude<<endl; 
-			cout<<"\tAltitude: "<<tempVec[i].Altitude<<endl;
-			cout<<"\tLatitude Error: "<<tempVec[i].Lat_Error<<endl; 
-			cout<<"\tLongitude Error: "<<tempVec[i].Long_Error<<endl; 
-			cout<<"\tAltitude Error: "<<tempVec[i].Altitude_Error<<endl; 
-			cout<<"\tSpeed: "<<tempVec[i].Speed<<endl; 
-			cout<<"\tAverage Speed: "<<tempVec[i].Average_speed<<endl; 
-			cout<<"\tTimeStamp: "<<tempVec[i].TimeStamp<<endl; 
-			cout<<"\tDirty Flag: "<<tempVec[i].Dirty_flag<<endl;
+			cout<<"\tBSM Id: "<<localVec[i].BSM_Id<<endl;
+			cout<<"\tGPS Fix: "<<localVec[i].GPS_Fix<<endl; 
+			cout<<"\tLatitude: "<<localVec[i].Latitude<<endl; 
+			cout<<"\tLongitude: "<<localVec[i].Longitude<<endl; 
+			cout<<"\tAltitude: "<<localVec[i].Altitude<<endl;
+			cout<<"\tLatitude Error: "<<localVec[i].Lat_Error<<endl; 
+			cout<<"\tLongitude Error: "<<localVec[i].Long_Error<<endl; 
+			cout<<"\tAltitude Error: "<<localVec[i].Altitude_Error<<endl; 
+			cout<<"\tSpeed: "<<localVec[i].Speed<<endl; 
+			cout<<"\tAverage Speed: "<<localVec[i].Average_speed<<endl; 
+			cout<<"\tTimeStamp: "<<localVec[i].TimeStamp<<endl; 
+			cout<<"\tDirty Flag: "<<localVec[i].Dirty_flag<<endl;
 			
 			cout<<endl;
 			
 		}*/
-		
 	}
 	
-	//SEM1 Critical section Start
-	mtx1.lock();
+	mtx1.lock();//SEM1 Critical section Start
 	myvec.clear();
-	//SEM1 Critical section Ends
-	mtx1.unlock();
-	mylist.clear();
-	mymap.clear();
-	//Sleep(15000);
-
+	mtx1.unlock();//SEM1 Critical section Ends
+	
+	mylist.clear();//get ready for next iteration
+	mymap.clear();//Clear the map as we have passed the data to respective threads & get ready for next iteration
+	
 	for(thread& t: threads)
 	{
 		t.join();//wait for them to finish execution 
 	}
 	
-	threads.clear();
+	threads.clear();//clear the vector & get ready for next iteration
+	
 	//time for threat assessment loop to start
-		{
-		  std::unique_lock<std::mutex> lck(lock_mtx);
-		  lockX = true;
-		  cv.notify_all();
-		}
-	//return 0;
+	//Once all the computationLoop threads have finished the computation then start the threatAssessmentLoop
+	{
+	  std::unique_lock<std::mutex> lck(lock_mtx);
+	  lockX = true;
+	  cv.notify_all();
+	}
 }
-
+//Each vehicle will have its computation loop in this it will correct the data (if required) & predict it.
 void computationLoop(vector<struct BSM> vehicle)
 {
 		//cout<<__FUNCTION__<<endl;
-		std::unique_lock<std::mutex> lck (atm);//just for maintaining the atomicity of thread
+		std::unique_lock<std::mutex> lck (atm);//just for maintaining the atomicity of thread, may be not required. No harm in either case !
 		vector<struct BSM>::iterator it;
-		cout<<"Msg:"<<vehicle.size()<<endl;
+		//cout<<"Msg:"<<vehicle.size()<<endl;
 		
 	/*	for(it = vehicle.begin(); it != vehicle.end(); it++)
 		{
@@ -496,11 +473,11 @@ void computationLoop(vector<struct BSM> vehicle)
 		}
 	*/	
 		processLoop(vehicle);//sanity test 
-		predicted p = {0};
+		predicted p = {0}; //clear the structure
 		p = predictLoop(vehicle,confidenceLevel);//predict
-		myqueue.push(p);
+		myqueue.push(p);//put the data in Global Q of predicted points
 }
-
+//This function takes the history points(Lat&Long) and correct them in case of errors
 void processLoop(vector<struct BSM>& vehicle)
 {
 	//cout<<__FUNCTION__<<endl;
@@ -511,20 +488,18 @@ void processLoop(vector<struct BSM>& vehicle)
 		//double Lat_Error; 
 		//double Long_Error; 
 		//double Altitude_Error; 
+		//GPS Fix
 	
 	//Altitude consideration NA
 	
 }
-
+//Some one Please help in prediction ! :(
+//Take the history points(Lat&Long) and predict for certain time (confidenceLevel)
 struct predicted predictLoop(vector<struct BSM> vehicle,int confidenceLevel)
 {
 	//cout<<__FUNCTION__<<endl;
 	cout<<"..............H		E	L	P............S		O	S......"<<endl;
 	predicted p;
-	//p.Latitude = 1; 
-	//p.Longitude = 1; 
-	//p.Altitude;
-	//p.BSM_Id;
 	
 	vector<struct BSM>::iterator it;
 		for(it = vehicle.begin(); it != vehicle.end(); it++)
@@ -553,19 +528,20 @@ struct predicted predictLoop(vector<struct BSM> vehicle,int confidenceLevel)
 	
 	return p;
 }
-
+//This function will compute the distance between ego vehicle & other vehicles in computation. Declares if there is any threat.
 void threatAssessmentLoop(int threatZone)
 {
 	//cout<<__FUNCTION__<<endl;
+	double distance;
 	predicted self,temp;
 	std::vector<struct predicted> calcvec;
-	//wait foe all the threads to complete prediction, wait for signal
+	//wait for all the threads to complete prediction so that assessment can be started, wait for signal !
 	while(1)
 	{
-	std::unique_lock<std::mutex> lck(lock_mtx);
-	while(!lockX) cv.wait(lck);
+		std::unique_lock<std::mutex> lck(lock_mtx);//wait for the computation thread to finish
+		while(!lockX) cv.wait(lck);					//wait for it's signal
 	
-	//cout<<"Got the Lock go ahead"<<endl;
+		//cout<<"Got the Lock go ahead"<<endl;
 	
 		while(!myqueue.empty())
 		{
@@ -573,50 +549,75 @@ void threatAssessmentLoop(int threatZone)
 			cout<<myqueue.front().Latitude<<endl; 
 			cout<<myqueue.front().Longitude<<endl; 
 			cout<<myqueue.front().Altitude<<endl;*/
-			if(myqueue.front().BSM_Id == self_BSM_id)
+			if(myqueue.front().BSM_Id == self_BSM_id)//own vehicles predicted points
 			{
 				self.BSM_Id = myqueue.front().BSM_Id;
 				self.Latitude = myqueue.front().Latitude;
 				self.Longitude = myqueue.front().Longitude;
 				self.Altitude = myqueue.front().Altitude;
 			}
-			else{
+			else{									//other vehicle predicted points
 				temp.BSM_Id = myqueue.front().BSM_Id;
 				temp.Latitude = myqueue.front().Latitude;
 				temp.Longitude = myqueue.front().Longitude;
 				temp.Altitude = myqueue.front().Altitude;
-				calcvec.push_back(temp);
+				calcvec.push_back(temp); //push it local vector of other vehicles predicted points
 			}
 			
-			
-			
-			myqueue.pop();
+			myqueue.pop();//empty the Q for next cycle
 		}
 		
-		//myqueue.empty() == true ? cout<<"COOL"<<endl : cout<<"Nama Cool"<<endl;
+		//myqueue.empty() == true ? cout<<"Queue is empty"<<endl : cout<<"Queue is not empty"<<endl;
 		
-			cout<<"Self predicted data:"<<endl;
+			/*cout<<"Self predicted data:"<<endl;
 			cout<<self.BSM_Id<<endl;
 			cout<<self.Latitude<<endl;
 			cout<<self.Longitude<<endl;
 			cout<<self.Altitude<<endl;
 			
 			cout<<endl<<endl;
-
-			cout<<"Rest prediction data:"<<endl;
-			vector<struct predicted>::iterator it;
-			for(it = calcvec.begin();it != calcvec.end();it++)
-			{
-				cout<<it->BSM_Id<<endl;
+			*/
+			//cout<<"Rest prediction data:"<<endl;
+		vector<struct predicted>::iterator it;
+		for(it = calcvec.begin();it != calcvec.end();it++)
+		{
+			/*	cout<<it->BSM_Id<<endl;
 				cout<<it->Latitude<<endl;
 				cout<<it->Longitude<<endl;
 				cout<<it->Altitude<<endl;
 				cout<<endl;
+			*/
+			//function call to calculate threat
+			double lat1 = self.Latitude * (PI/180);
+			double long1 = self.Longitude * (PI/180);
+			double lat2 = it->Latitude * (PI/180);
+			double long2 = it->Longitude * (PI/180);
+
+			distance = calculateDistance(lat1,long1,lat2,long2);//calculate the distance between ego vehicle & other vehicle  
+			//consider altitude
+			int altitude_difference = abs(self.Altitude - it->Altitude);
+			if(distance <= threatZone && altitude_difference <= altitude_clearance) //If distance is less than safe distance & on the same altitude
+			{
+				cout<<"************brace yourself for impact with "<<it->BSM_Id<<" ************"<<endl;
 			}
+		}
 			
-			cout<<"vector size"<<calcvec.size()<<endl;
-		
-	calcvec.clear();	
-	lockX = false;//make the lock unavailable
+		//cout<<"vector size"<<calcvec.size()<<endl;
+			
+		calcvec.clear();	
+		lockX = false;//make the lock unavailable
 	}
+}
+//This function will calculate the distance between 2 points in meters
+double calculateDistance(double lat1,double long1,double lat2,double long2)
+{
+	double diflat = lat2 - lat1;
+	double diflong = long2 - long1;
+	double a,c,d;
+	double R = radius_of_earth;
+
+	a = pow((sin(diflat/2)),2) + cos(lat1)*cos(lat2)* pow((sin(diflong/2)),2);
+	c = 2* atan2( sqrt(a), sqrt(1-a));
+	d = R*c;
+	return (d * 1000);//in meters
 }
