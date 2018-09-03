@@ -159,6 +159,10 @@ int main(void)
 				bsm.Dirty_flag = false;
 				bsm.BSM_Id = *it; 
 				bsm.GPS_Fix = counter; 
+				if(bsm.BSM_Id == 2)
+				{
+					bsm.GPS_Fix = 0;//just to check Process Loop. So the BSM id 2 will be discarded
+				}
 				bsm.Latitude = 18; 
 				bsm.Longitude = 73; 
 				bsm.Altitude = 500;
