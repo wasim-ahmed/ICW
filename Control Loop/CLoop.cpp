@@ -40,10 +40,14 @@ struct BSM{
 	double Average_speed; 
 	long TimeStamp; 
 };
-
+struct vehicle{
+double speed;
+int indicator;//0: None; 1: Left ON; 2: Right ON
+};
 struct predicted
 {
 	int BSM_Id; 
+	int indicator;
 	double Latitude; 
 	double Longitude;
 	double Altitude;	
@@ -64,14 +68,21 @@ std::vector<struct BSM> tempvec; //for receiving data from other vehicles
 std::queue<struct predicted> myqueue;//Message Q to hold the predicted locations of vehicle in computation
 std::condition_variable cv;//for synchronising threatAssessmentLoop
 
+//Tuning parameters
+
 const int threatZone = 5;//in meters
 const int confidenceLevel = 3;//in seconds
 const int self_BSM_id = 21;
-const int radius_of_earth = 6371;
+const int radius_of_earth = 6371; //This no one should/can change :)
 const int dataPoint = 1;//This is in second. 1 second we will get 10 data points
 const int periodicity = 100;//in ms
 const int altitude_clearance  = 5;//in meters
 bool lockX = false;//for synchronising threatAssessmentLoop
+bool GPS_Connection = true;//Default : false . to be set from GPS library
+bool Vehicle_Connection = false;//Default : false . to be set by Socket CAN.
+const int Lat_Error_Tolerance = 5;//in meters
+const int Long_Error_Tolerance = 5;//in meters
+const int Altitude_Error_Tolerance = 5;//in meters
 
 
 //Receives the data from other vehicles and fill the vector
@@ -230,6 +241,14 @@ void connectLoop()
 		cout<<temp<<endl;
 */		
 		//Fill in your data from GPS & CAN Bus
+		
+		if(GPS_Connection == false)
+		{
+			//no point in going forward, wait for the GPS connection to be available
+			counter = 1;
+			Sleep(1);
+			continue;			
+		}
 			bsm.Dirty_flag = false;
 			bsm.BSM_Id = 21; 
 			bsm.GPS_Fix = 1; 
@@ -239,7 +258,18 @@ void connectLoop()
 			bsm.Lat_Error = 0; 
 			bsm.Long_Error = 0; 
 			bsm.Altitude_Error = 0; 
-			bsm.Speed = 10; 
+			if (Vehicle_Connection == true)
+			{
+				bsm.Speed = 0;
+			}
+			else if(GPS_Connection == true)
+			{
+				bsm.Speed = 0;
+			}
+			else{
+				bsm.Speed = 0;
+			}
+			bsm.Speed = 10; //utilize the vehicle speed from CAN Bus
 			bsm.Average_speed = 10; 
 			bsm.TimeStamp = 12345;//std::chrono::system_clock::to_time_t( now ); 
 			
@@ -488,10 +518,23 @@ void processLoop(vector<struct BSM>& vehicle)
 		//double Lat_Error; 
 		//double Long_Error; 
 		//double Altitude_Error; 
-		//GPS Fix
-	
-	//Altitude consideration NA
-	
+		
+		//if the above error are greater than 5m then discard
+		//GPS Fix : fix 0 then discard the data
+		//fill average speed, may be required in prediction
+		
+		vector<struct BSM>::iterator it;
+		for(it = vehicle.begin();it != vehicle.end(); )// as vector.erase() reallocate the vector, thus disturbing iterator So we need to handle the iterator manually 
+		{
+			if((it->GPS_Fix != 1) || (it->Lat_Error >= Lat_Error_Tolerance) || (it->Long_Error >= Long_Error_Tolerance) || (it->Altitude_Error >= Altitude_Error_Tolerance)) 
+			{
+				it = vehicle.erase(it);//if we don't have a valid GPS Fix | valid Latitude | valid Longitude | valid Altitude , then just discard the data
+			}				
+			else{
+				it++;
+			}
+		}
+		//dirty flag
 }
 //Some one Please help in prediction ! :(
 //Take the history points(Lat&Long) and predict for certain time (confidenceLevel)
@@ -518,10 +561,11 @@ struct predicted predictLoop(vector<struct BSM> vehicle,int confidenceLevel)
 			cout<<"\tTimeStamp: "<<it->TimeStamp<<endl; 
 			cout<<"\tDirty Flag: "<<it->Dirty_flag<<endl;
 		*/	
-			p.Latitude = it->Latitude + 0.001; 
+			p.Latitude = it->Latitude + 0.001; //just adding some random noise
 			p.Longitude = it->Longitude + 0.001; 
 			p.Altitude = it->Altitude;
 			p.BSM_Id = it->BSM_Id;
+			p.indicator = 0;
 			
 			//cout<<endl;
 		}
