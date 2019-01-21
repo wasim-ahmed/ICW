@@ -1,11 +1,3 @@
 
 # ICW
-Source Code for ICW
-Currently for windows, using MinGW 4.8.1
-
-
-need to port it on Linux !
-
-BSM Simulator is a traffic simulator
-
-Control Loop is the vehicle code
+This project is to detect Collision among vehicles primarily at an Intersection. Control Loop is the algorithm which is responsible to detect the Collision. BSM Simulator is the program to feed the test data to the algorithm. The code is developed in C++11 on windows 10 using MinGW 4.8.1
