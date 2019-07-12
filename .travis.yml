@@ -2,7 +2,5 @@ language: cpp
 compiler: gcc
 
 script:
-- g++ BSIM.cpp -o BSIM
-- g++ CLoop.cpp -o Cloop
-- ./BSIM
-- ./CLoop
+- g++ -c BSM Simulator/BSIM.cpp
+- g++ -c Control Loop/CLoop.cpp
