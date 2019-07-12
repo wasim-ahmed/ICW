@@ -5,5 +5,5 @@ os: windows
 script:
 - g++ -c -std=c++11 "BSM Simulator/BSIM.cpp"
 - g++ -c -std=c++11 -pthread "Control Loop/CLoop.cpp"
-- g++ -o BSIM.exe "BSM Simulator/BSIM.o" -l ws2_32
-- g++ -o CLoop.exe "Control Loop/CLoop.o" -l ws2_32
+- g++ -o BSIM.exe BSIM.o -l ws2_32
+- g++ -o CLoop.exe CLoop.o -l ws2_32
