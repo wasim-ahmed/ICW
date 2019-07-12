@@ -7,3 +7,5 @@ script:
 - g++ -c -std=c++11 -pthread "Control Loop/CLoop.cpp"
 - g++ -o BSIM.exe BSIM.o -l ws2_32
 - g++ -o CLoop.exe CLoop.o -l ws2_32
+- BSIM.exe
+- CLoop.exe
