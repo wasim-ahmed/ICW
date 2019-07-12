@@ -1,0 +1,8 @@
+language: cpp
+compiler: gcc
+
+script:
+- g++ BSIM.cpp -o BSIM
+- g++ CLoop.cpp -o Cloop
+- ./BSIM
+- ./CLoop
