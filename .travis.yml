@@ -2,5 +2,5 @@ language: cpp
 compiler: gcc
 
 script:
-- g++ -c BSM Simulator/BSIM.cpp
-- g++ -c Control Loop/CLoop.cpp
+- g++ -c "BSM Simulator/BSIM.cpp"
+- g++ -c "Control Loop/CLoop.cpp"
